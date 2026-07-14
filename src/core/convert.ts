@@ -99,6 +99,14 @@ export function localDateNow(options: { timezone: string }): LocalDate {
   return formatInTimeZone(new Date(), options.timezone, "yyyy-MM-dd")
 }
 
+/**
+ * Returns the local date for tomorrow in the given timezone.
+ * Tomorrow is computed as 24 hours after the current moment — DST-safe for day-level precision.
+ */
+export function localDateTomorrow(options: { timezone: string }): LocalDate {
+  return formatInTimeZone(new Date(Date.now() + 24 * 60 * 60 * 1000), options.timezone, "yyyy-MM-dd")
+}
+
 /** Splits a local date (yyyy-MM-dd) into its year, month, and day string parts. */
 export function splitLocalDate(options: {
   localDate: LocalDate
