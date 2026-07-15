@@ -65,13 +65,20 @@ export function localDateToIsoDateMidOfDay(options: {
   return fromZonedTime(`${options.localDate}T12:00:00`, options.timezone).toISOString()
 }
 
-/** Converts a local date + local time to a UTC ISO string in the given timezone. */
+/**
+ * Converts a local date + local time to a UTC ISO string in the given timezone.
+ * Accepts `localTime` with or without seconds/milliseconds (e.g. "15:00", "15:00:00",
+ * "15:00:00.000") — seconds are only appended when missing, to avoid producing an
+ * invalid time string like "15:00:00.000:00".
+ */
 export function localDateToIsoDate(options: {
   localDate: LocalDate
   localTime: LocalTime
   timezone: string
 }): IsoDate {
-  return fromZonedTime(`${options.localDate}T${options.localTime}:00`, options.timezone).toISOString()
+  const hasSeconds = options.localTime.split(":").length >= 3
+  const localTime = hasSeconds ? options.localTime : `${options.localTime}:00`
+  return fromZonedTime(`${options.localDate}T${localTime}`, options.timezone).toISOString()
 }
 
 /** Converts a UTC ISO string to a local date (yyyy-MM-dd) in the given timezone. */
