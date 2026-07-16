@@ -1,7 +1,7 @@
 {
   "name": "dayjavu",
   "author": "johkade.dev@gmail.com",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Type-safe date utilities with timezone and locale enforcement",
   "keywords": ["date", "timezone", "locale", "date-fns", "typescript"],
   "license": "MIT",

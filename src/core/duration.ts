@@ -1,8 +1,9 @@
-import { add, parseISO } from "date-fns"
+import { add, parseISO, formatDuration as dateFnsFormatDuration } from "date-fns"
 import { parseIsoDuration } from "./arithmetic"
 import { localDateToIsoDateMidOfDay } from "./convert"
 import { formatIsoDate } from "./format"
-import type { IsoDate, IsoDuration, LocalDate, LocalTime } from "../types"
+import { LOCALE_MAP } from "./init"
+import type { IsoDate, IsoDuration, LocalDate, LocalTime, SupportedLocale, TranslationFunction } from "../types"
 
 const MS = {
   second: 1000,
@@ -141,4 +142,145 @@ export function timeUnitsToIsoDuration(options: {
 }): IsoDuration {
   const ms = options.hours * MS.hour + options.minutes * MS.minute
   return msToIsoDuration({ ms })
+}
+
+// ─── Human-readable duration formatting ─────────────────────────────────────
+
+export type DurationStyle = "long" | "short" | "tiny"
+export type DurationGranularity = "auto" | "minutes" | "roundedToDays"
+
+type DurationUnitKey = "years" | "days" | "hours" | "minutes"
+
+/** Translation keys + English fallback strings for the "short"/"tiny" styles, one entry per unit. */
+const UNIT_KEYS: Record<
+  DurationUnitKey,
+  { long: string; longOne: string; short: string; tiny: string }
+> = {
+  years:   { long: "common.units.nYears",   longOne: "common.units.nYearsOne",   short: "common.units.nYearsShort",   tiny: "common.units.nYearsTiny" },
+  days:    { long: "common.units.nDays",    longOne: "common.units.nDaysOne",    short: "common.units.nDaysShort",    tiny: "common.units.nDaysTiny" },
+  hours:   { long: "common.units.nHours",   longOne: "common.units.nHoursOne",   short: "common.units.nHoursShort",   tiny: "common.units.nHoursTiny" },
+  minutes: { long: "common.units.nMinutes", longOne: "common.units.nMinutesOne", short: "common.units.nMinutesShort", tiny: "common.units.nMinutesTiny" },
+}
+
+const UNIT_DEFAULTS: Record<DurationUnitKey, { long: string; longOne: string; short: string; tiny: string }> = {
+  years:   { long: "{{count}} years",   longOne: "{{count}} year",   short: "{{count}} y",   tiny: "{{count}} y" },
+  days:    { long: "{{count}} days",    longOne: "{{count}} day",    short: "{{count}} d",   tiny: "{{count}} d" },
+  hours:   { long: "{{count}} hours",   longOne: "{{count}} hour",   short: "{{count}} h",   tiny: "{{count}} h" },
+  minutes: { long: "{{count}} minutes", longOne: "{{count}} minute", short: "{{count}} min", tiny: "{{count}} m" },
+}
+
+/** Renders a single unit via date-fns's own locale strings (used for `style: "long"`). */
+function renderUnitLong(unit: DurationUnitKey, count: number, locale: SupportedLocale): string {
+  return dateFnsFormatDuration({ [unit]: count }, { locale: LOCALE_MAP[locale], format: [unit], zero: true })
+}
+
+/** Renders a single unit via a consumer-supplied translation function (used for `style: "short" | "tiny"`). */
+function renderUnitShortTiny(unit: DurationUnitKey, count: number, style: "short" | "tiny", t: TranslationFunction): string {
+  const keys = UNIT_KEYS[unit]
+  const defaults = UNIT_DEFAULTS[unit]
+  return style === "tiny"
+    ? t(keys.tiny, { default: defaults.tiny, count: String(count) })
+    : t(keys.short, { default: defaults.short, count: String(count) })
+}
+
+function renderUnit(unit: DurationUnitKey, count: number, style: DurationStyle, locale: SupportedLocale, t?: TranslationFunction): string {
+  if (style === "long") return renderUnitLong(unit, count, locale)
+  if (!t) throw new Error(`formatDurationMs: "t" is required for style "${style}"`)
+  return renderUnitShortTiny(unit, count, style, t)
+}
+
+/**
+ * Best-effort German dative-plural adjustment ("Tage" -> "Tagen", "Jahre" -> "Jahren").
+ * Generic across units/styles: applied to whatever unit string was rendered, not hardcoded to days.
+ * Not a full grammar engine — only handles the common "ends in -e" weak-declension case.
+ */
+function applyCaseAdjustment(text: string, locale: SupportedLocale, caseAdjusted: boolean): string {
+  if (!caseAdjusted || locale !== "de") return text
+  return /e$/.test(text) ? `${text}n` : text
+}
+
+const UNIT_ORDER: DurationUnitKey[] = ["years", "days", "hours", "minutes"]
+
+/** Splits a millisecond span into whole days/hours/minutes (no weeks/months — see module docs). */
+function msToDayHourMinuteParts(ms: number): { days: number; hours: number; minutes: number } {
+  const days = Math.floor(ms / MS.day)
+  const hours = Math.floor((ms - days * MS.day) / MS.hour)
+  const minutes = Math.floor((ms - days * MS.day - hours * MS.hour) / MS.minute)
+  return { days, hours, minutes }
+}
+
+/**
+ * Single shared renderer: given a sparse map of unit -> count, renders every non-zero
+ * unit (in `UNIT_ORDER`) and joins them. If every provided unit is zero, falls back to
+ * rendering the smallest provided unit as zero (e.g. "0 minutes") instead of an empty string.
+ * `formatDurationMs` and `formatIsoDuration` both reduce their input down to this shape
+ * and delegate here — neither re-implements the render/join logic itself.
+ */
+function formatDurationFromParts(
+  parts: Partial<Record<DurationUnitKey, number>>,
+  options: { style: DurationStyle; locale: SupportedLocale; caseAdjusted: boolean; t?: TranslationFunction },
+): string {
+  const { style, locale, caseAdjusted, t } = options
+  const present = UNIT_ORDER.filter((unit) => parts[unit] !== undefined)
+  const nonZero = present.filter((unit) => parts[unit])
+  const unitsToRender = nonZero.length > 0 ? nonZero : present.slice(-1)
+  return unitsToRender
+    .map((unit) => applyCaseAdjustment(renderUnit(unit, parts[unit] ?? 0, style, locale, t), locale, caseAdjusted))
+    .join(" ")
+}
+
+/**
+ * Formats a millisecond duration as a human-readable string.
+ *
+ * `style: "long"` (default) uses date-fns's own per-locale duration strings — correct
+ * pluralization/grammar for all 7 supported locales, no translation keys needed.
+ * `style: "short" | "tiny"` has no date-fns equivalent, so a `t: TranslationFunction` is
+ * required and drives the wording (see `UNIT_KEYS` for the expected translation keys).
+ */
+export function formatDurationMs(options: {
+  ms: number
+  locale: SupportedLocale
+  style?: DurationStyle
+  granularity?: DurationGranularity
+  /** German dative-plural adjustment for whichever unit is rendered, e.g. "2 Tage" -> "2 Tagen". */
+  caseAdjusted?: boolean
+  /** Required for style "short" | "tiny". Unused for "long" (date-fns locale strings are used instead). */
+  t?: TranslationFunction
+}): string {
+  const { ms, locale, style = "long", granularity = "auto", caseAdjusted = false, t } = options
+  const safeMs = Number.isFinite(ms) && ms > 0 ? ms : 0
+  const renderOptions = { style, locale, caseAdjusted, t }
+
+  if (granularity === "minutes")
+    return formatDurationFromParts({ minutes: Math.floor(safeMs / MS.minute) }, renderOptions)
+  if (granularity === "roundedToDays")
+    return formatDurationFromParts({ days: Math.round(safeMs / MS.day) }, renderOptions)
+
+  return formatDurationFromParts(msToDayHourMinuteParts(safeMs), renderOptions)
+}
+
+/**
+ * Formats an ISO 8601 duration string as a human-readable string.
+ * Reuses `parseIsoDuration`, so unlike a regex-per-shape approach it handles any
+ * combination of years/months/weeks/days/hours/minutes/seconds (e.g. "P1Y2M3W4D").
+ *
+ * Only `years`, `days`, `hours`, and `minutes` are ever rendered — weeks and months are
+ * folded into days (weeks exactly; months using the same 30-day approximation as
+ * `isoDurationToMs`) rather than shown as their own unit.
+ */
+export function formatIsoDuration(options: {
+  isoDuration: IsoDuration
+  locale: SupportedLocale
+  style?: DurationStyle
+  caseAdjusted?: boolean
+  t?: TranslationFunction
+}): string {
+  const { isoDuration, locale, style = "long", caseAdjusted = false, t } = options
+  const { years, months, weeks, days, hours, minutes, seconds } = parseIsoDuration(isoDuration)
+  const subYearMs =
+    months * MS.month + weeks * MS.week + days * MS.day + hours * MS.hour + minutes * MS.minute + seconds * MS.second
+  return formatDurationFromParts(
+    { years, ...msToDayHourMinuteParts(subYearMs) },
+    { style, locale, caseAdjusted, t },
+  )
 }

@@ -112,6 +112,33 @@ dayjavu.localTimeSpanToIsoDuration({ startTime: "09:00", endTime: "10:30" }) // 
 dayjavu.addIsoDurationToIsoDate({ isoDate, isoDuration: "PT2H" }) // → ISO string 2 hours later
 ```
 
+### Human-readable duration formatting
+
+`formatDurationMs` / `formatIsoDuration` turn a duration into a display string. Only `years`, `days`,
+`hours`, and `minutes` are ever rendered — weeks and months are folded into days (weeks exactly,
+months as an approximate 30-day month, same as `isoDurationToMs`). `style: "long"` (the default) uses
+date-fns's own per-locale strings — no translation keys needed:
+
+```ts
+dayjavu.formatDurationMs({ ms: 90 * 60 * 1000, locale: "en" }) // → "1 hour 30 minutes"
+dayjavu.formatDurationMs({ ms: 24 * 60 * 60 * 1000, locale: "de" }) // → "1 Tag"
+dayjavu.formatIsoDuration({ isoDuration: "P1Y2M3W4D", locale: "en" }) // → "1 year 85 days"
+```
+
+`style: "short" | "tiny"` has no date-fns equivalent, so pass a `t: TranslationFunction` to supply the wording:
+
+```ts
+dayjavu.formatDurationMs({ ms: 90 * 60 * 1000, locale: "en", style: "short", t }) // → "1 h 30 min"
+dayjavu.formatDurationMs({ ms: 90 * 60 * 1000, locale: "en", style: "tiny", t }) // → "1 h 30 m"
+```
+
+`caseAdjusted: true` applies a German dative-plural adjustment to whichever unit is rendered (e.g. "2 Tage" → "2 Tagen"):
+
+```ts
+dayjavu.formatDurationMs({ ms: 2 * 24 * 60 * 60 * 1000, locale: "de", granularity: "roundedToDays", caseAdjusted: true })
+// → "2 Tagen"
+```
+
 ## React Native
 
 `dayjavu.getUserTimezone()` uses `Intl.DateTimeFormat().resolvedOptions().timeZone` and works correctly on:
