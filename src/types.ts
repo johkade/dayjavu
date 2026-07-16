@@ -54,9 +54,10 @@ export type RelativeTime = "now" | "yesterday" | "tomorrow" | "nextWeek" | "last
 /**
  * A function that resolves a translation key to a localised string.
  * Compatible with i18next, react-intl, and custom i18n solutions.
- * Extra keys in options are treated as template variables.
+ * `default` is always required so missing keys degrade to the fallback string.
+ * Extra keys (e.g. `count`) are treated as template variables.
  */
 export type TranslationFunction = (
   key: string,
-  options?: { default?: string; [variable: string]: string | undefined },
+  options: { default: string; [variable: string]: string | number },
 ) => string

@@ -179,8 +179,8 @@ function renderUnitShortTiny(unit: DurationUnitKey, count: number, style: "short
   const keys = UNIT_KEYS[unit]
   const defaults = UNIT_DEFAULTS[unit]
   return style === "tiny"
-    ? t(keys.tiny, { default: defaults.tiny, count: String(count) })
-    : t(keys.short, { default: defaults.short, count: String(count) })
+    ? t(keys.tiny, { default: defaults.tiny, count })
+    : t(keys.short, { default: defaults.short, count })
 }
 
 function renderUnit(unit: DurationUnitKey, count: number, style: DurationStyle, locale: SupportedLocale, t?: TranslationFunction): string {
