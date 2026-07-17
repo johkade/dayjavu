@@ -83,6 +83,28 @@ export function isoDateIsToday(options: {
   })
 }
 
+export function isoDateIsYesterday(options: {
+  isoDate: IsoDate
+  timezone: string
+}): boolean {
+  return isoDateIsSameDay({
+    isoDate: options.isoDate,
+    isoDateToCompare: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+    timezone: options.timezone,
+  })
+}
+
+export function isoDateIsTomorrow(options: {
+  isoDate: IsoDate
+  timezone: string
+}): boolean {
+  return isoDateIsSameDay({
+    isoDate: options.isoDate,
+    isoDateToCompare: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    timezone: options.timezone,
+  })
+}
+
 /** Returns true if the ISO date falls within the calendar day of the given local date in the given timezone. */
 export function isoDateIsOnLocalDate(options: {
   isoDate: IsoDate
