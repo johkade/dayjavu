@@ -13,6 +13,9 @@ import {
   isoDateIsToday,
   isoDateIsTomorrow,
   isoDateIsYesterday,
+  localDateIsToday,
+  localDateIsTomorrow,
+  localDateIsYesterday,
 } from "./compare"
 import { localDateToIsoDate, localDateToIsoDateMidOfDay } from "./convert"
 import { LOCALE_MAP, resolveSupportedLocale } from "./init"
@@ -80,7 +83,7 @@ const RELATIVE_DAY_NAMES = {
   },
 } as const
 
-/** Renders "Today, 10:30 AM" / "Yesterday, 10:30 AM" / "2024/12/31, 10:30 AM" via a consumer-supplied `t`. */
+/** Renders "Today, 10:30 AM" / "Yesterday, 10:30 AM" / "2024/12/31, 10:30 AM". */
 function formatIsoDateRelativeToday(options: {
   isoDate: IsoDate
   timezone: string
@@ -107,6 +110,39 @@ function formatIsoDateRelativeToday(options: {
   if (!relativeDay) return `${day} ${time}`
 
   return `${day}, ${time}`
+}
+
+/** Renders "Today" / "Yesterday" / "2024/12/31" or returns null if withFallback=false */
+export function formatLocalDateRelativeToday<
+  TFallback extends boolean = false,
+>(options: {
+  localDate: LocalDate
+  timezone: string
+  locale: string
+  withFallback: TFallback
+}): TFallback extends true ? string : string | null {
+  const { localDate, timezone, locale } = options
+
+  const args = { localDate, timezone }
+
+  const relativeDay = localDateIsToday(args)
+    ? "today"
+    : localDateIsTomorrow(args)
+      ? "tomorrow"
+      : localDateIsYesterday(args)
+        ? "yesterday"
+        : null
+
+  if (!relativeDay) {
+    // We cast the return types here to satisfy the conditional return type condition
+    return options.withFallback
+      ? formatLocalDate({ format: "2024/12/31", localDate, locale, timezone })
+      : null as any // ok in this case
+  }
+
+  return RELATIVE_DAY_NAMES[locale as keyof typeof RELATIVE_DAY_NAMES][
+    relativeDay
+  ]
 }
 
 /** Formats a UTC ISO string into a human-readable string in the given timezone and locale. */
