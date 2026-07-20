@@ -1,12 +1,24 @@
-import { format, formatRelative, parseISO } from "date-fns"
+import { formatRelative, parseISO } from "date-fns"
 import { formatInTimeZone, toZonedTime } from "date-fns-tz"
-import { LOCALE_MAP, resolveSupportedLocale } from "./init"
+import type {
+  IsoDate,
+  LocalDate,
+  LocalTime,
+  RelativeTime,
+  TimeFormat,
+  TranslationFunction,
+} from "../types"
+import {
+  isoDateIsSameDay,
+  isoDateIsToday,
+  isoDateIsTomorrow,
+  isoDateIsYesterday,
+} from "./compare"
 import { localDateToIsoDate, localDateToIsoDateMidOfDay } from "./convert"
-import { isoDateIsSameDay } from "./compare"
-import type { IsoDate, LocalDate, LocalTime, RelativeTime, TimeFormat, TranslationFunction } from "../types"
+import { LOCALE_MAP, resolveSupportedLocale } from "./init"
 
 /** @see https://date-fns.org/v3.6.0/docs/format */
-const FORMAT_MAP: Record<TimeFormat, string> = {
+const FORMAT_MAP: Record<Exclude<TimeFormat, "Today, 10:30 AM">, string> = {
   "10:30 AM": "p",
   "10:30": "HH:mm",
   "2024/12/31": "P",
@@ -30,6 +42,73 @@ const FORMAT_MAP: Record<TimeFormat, string> = {
   Mo: "EEEEEE",
 }
 
+const RELATIVE_DAY_NAMES = {
+  en: {
+    today: "Today",
+    tomorrow: "Tomorrow",
+    yesterday: "Yesterday",
+  },
+  de: {
+    today: "Heute",
+    tomorrow: "Morgen",
+    yesterday: "Gestern",
+  },
+  es: {
+    today: "Hoy",
+    tomorrow: "Mañana",
+    yesterday: "Ayer",
+  },
+  fr: {
+    today: "Aujourd'hui",
+    tomorrow: "Demain",
+    yesterday: "Hier",
+  },
+  pt: {
+    today: "Hoje",
+    tomorrow: "Amanhã",
+    yesterday: "Ontem",
+  },
+  nl: {
+    today: "Vandaag",
+    tomorrow: "Morgen",
+    yesterday: "Gisteren",
+  },
+  it: {
+    today: "Oggi",
+    tomorrow: "Domani",
+    yesterday: "Ieri",
+  },
+} as const
+
+/** Renders "Today, 10:30 AM" / "Yesterday, 10:30 AM" / "2024/12/31, 10:30 AM" via a consumer-supplied `t`. */
+function formatIsoDateRelativeToday(options: {
+  isoDate: IsoDate
+  timezone: string
+  locale: string
+}): string {
+  const { isoDate, timezone, locale } = options
+
+  const time = formatIsoDate({ isoDate, timezone, locale, format: "10:30 AM" })
+
+  const args = { isoDate, timezone }
+
+  const relativeDay = isoDateIsToday(args)
+    ? "today"
+    : isoDateIsTomorrow(args)
+      ? "tomorrow"
+      : isoDateIsYesterday(args)
+        ? "yesterday"
+        : null
+
+  const day = !relativeDay
+    ? formatIsoDate({ isoDate, timezone, locale, format: "2024/12/31" })
+    : RELATIVE_DAY_NAMES[locale as keyof typeof RELATIVE_DAY_NAMES][relativeDay]
+
+  if (!relativeDay) return `${day} ${time}`
+
+  return `${day}, ${time}`
+}
+
 /** Formats a UTC ISO string into a human-readable string in the given timezone and locale. */
 export function formatIsoDate(options: {
   isoDate: IsoDate
@@ -37,8 +116,20 @@ export function formatIsoDate(options: {
   format: TimeFormat
   locale: string
 }): string {
+  if (options.format === "Today, 10:30 AM") {
+    return formatIsoDateRelativeToday({
+      isoDate: options.isoDate,
+      timezone: options.timezone,
+      locale: options.locale,
+    })
+  }
   const locale = LOCALE_MAP[resolveSupportedLocale(options.locale)]
-  return formatInTimeZone(parseISO(options.isoDate), options.timezone, FORMAT_MAP[options.format], { locale })
+  return formatInTimeZone(
+    parseISO(options.isoDate),
+    options.timezone,
+    FORMAT_MAP[options.format],
+    { locale },
+  )
 }
 
 /** Formats a `Date` object into a human-readable string in the given timezone and locale. */
@@ -59,10 +150,19 @@ export function formatLocalDate(options: {
   locale: string
 }): string {
   // Defensive guard: if someone accidentally passes an ISO instant, use it directly.
-  const isoDate = options.localDate.includes("Z") || options.localDate.includes("+")
-    ? options.localDate
-    : localDateToIsoDateMidOfDay({ localDate: options.localDate, timezone: options.timezone })
-  return formatIsoDate({ isoDate, format: options.format, timezone: options.timezone, locale: options.locale })
+  const isoDate =
+    options.localDate.includes("Z") || options.localDate.includes("+")
+      ? options.localDate
+      : localDateToIsoDateMidOfDay({
+          localDate: options.localDate,
+          timezone: options.timezone,
+        })
+  return formatIsoDate({
+    isoDate,
+    format: options.format,
+    timezone: options.timezone,
+    locale: options.locale,
+  })
 }
 
 /**
@@ -79,7 +179,12 @@ export function formatLocalTime(options: {
     localTime: options.localTime,
     timezone: "UTC",
   })
-  return formatIsoDate({ isoDate, format: options.format, timezone: "UTC", locale: options.locale })
+  return formatIsoDate({
+    isoDate,
+    format: options.format,
+    timezone: "UTC",
+    locale: options.locale,
+  })
 }
 
 /**
@@ -94,23 +199,47 @@ export function formatStartToEndTime(options: {
   endTime: IsoDate
   timezone: string
   locale: string
-  format?: "00:00 — 00:00" | "Tomorrow, Feb 16, 2024 | Monday, Feb 17, 2024 | Feb 17, 2024 — Feb 23, 2024"
+  format?:
+    | "00:00 — 00:00"
+    | "Tomorrow, Feb 16, 2024 | Monday, Feb 17, 2024 | Feb 17, 2024 — Feb 23, 2024"
 }): string {
   const { startTime, endTime, timezone, locale, format: fmt } = options
   const localeObj = LOCALE_MAP[resolveSupportedLocale(locale)]
 
   if (!fmt || fmt === "00:00 — 00:00") {
-    const s = formatIsoDate({ isoDate: startTime, timezone, format: "10:30 AM", locale })
-    const e = formatIsoDate({ isoDate: endTime, timezone, format: "10:30 AM", locale })
+    const s = formatIsoDate({
+      isoDate: startTime,
+      timezone,
+      format: "10:30 AM",
+      locale,
+    })
+    const e = formatIsoDate({
+      isoDate: endTime,
+      timezone,
+      format: "10:30 AM",
+      locale,
+    })
     return `${s} — ${e}`
   }
 
-  if (isoDateIsSameDay({ isoDate: startTime, isoDateToCompare: endTime, timezone })) {
-    return formatInTimeZone(parseISO(startTime), timezone, "PP", { locale: localeObj })
+  if (
+    isoDateIsSameDay({
+      isoDate: startTime,
+      isoDateToCompare: endTime,
+      timezone,
+    })
+  ) {
+    return formatInTimeZone(parseISO(startTime), timezone, "PP", {
+      locale: localeObj,
+    })
   }
 
-  const s = formatInTimeZone(parseISO(startTime), timezone, "PP", { locale: localeObj })
-  const e = formatInTimeZone(parseISO(endTime), timezone, "PP", { locale: localeObj })
+  const s = formatInTimeZone(parseISO(startTime), timezone, "PP", {
+    locale: localeObj,
+  })
+  const e = formatInTimeZone(parseISO(endTime), timezone, "PP", {
+    locale: localeObj,
+  })
   return `${s} — ${e}`
 }
 
@@ -189,13 +318,28 @@ export function formatRelativeTime(options: {
   const MS_PER_DAY = 24 * 60 * 60 * 1000
   let date: Date
   switch (options.relativeTime) {
-    case "now":       date = new Date(); break
-    case "yesterday": date = new Date(Date.now() - MS_PER_DAY); break
-    case "tomorrow":  date = new Date(Date.now() + MS_PER_DAY); break
-    case "nextWeek":  date = new Date(Date.now() + 7 * MS_PER_DAY); break
-    case "lastWeek":  date = new Date(Date.now() - 7 * MS_PER_DAY); break
+    case "now":
+      date = new Date()
+      break
+    case "yesterday":
+      date = new Date(Date.now() - MS_PER_DAY)
+      break
+    case "tomorrow":
+      date = new Date(Date.now() + MS_PER_DAY)
+      break
+    case "nextWeek":
+      date = new Date(Date.now() + 7 * MS_PER_DAY)
+      break
+    case "lastWeek":
+      date = new Date(Date.now() - 7 * MS_PER_DAY)
+      break
   }
-  return formatIsoDate({ isoDate: date.toISOString(), format: options.format, timezone: options.timezone, locale: options.locale })
+  return formatIsoDate({
+    isoDate: date.toISOString(),
+    format: options.format,
+    timezone: options.timezone,
+    locale: options.locale,
+  })
 }
 
 /**
@@ -215,6 +359,6 @@ export function formatIsoTimeIntelligently(options: {
   // Shift both dates into the target timezone so formatRelative compares
   // calendar days correctly rather than UTC days.
   const date = toZonedTime(parseISO(options.isoDate), options.timezone)
-  const now  = toZonedTime(new Date(), options.timezone)
+  const now = toZonedTime(new Date(), options.timezone)
   return formatRelative(date, now, { locale: localeObj })
 }

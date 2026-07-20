@@ -31,6 +31,8 @@ export type TimeFormat =
   | "Sat, Mar 3, 2023"
   | "Saturday, Mar 3, 2023"
   | "Mar 3, 2023, 10:30 AM"
+  // "Today, 10:30 AM" / "Yesterday, 10:30 AM" / "2024/12/31, 10:30 AM".
+  | "Today, 10:30 AM"
   // date (fixed format)
   | "2024-12-31"
   // partial date
@@ -49,7 +51,12 @@ export type TimeFormat =
   | "Mo"
 
 /** Relative time anchor for formatRelativeTime. */
-export type RelativeTime = "now" | "yesterday" | "tomorrow" | "nextWeek" | "lastWeek"
+export type RelativeTime =
+  | "now"
+  | "yesterday"
+  | "tomorrow"
+  | "nextWeek"
+  | "lastWeek"
 
 /**
  * A function that resolves a translation key to a localised string.

@@ -89,6 +89,10 @@ dayjavu.formatIsoDate({ isoDate: event.startsAt, format: "Sat, Mar 3, 2023", tim
 dayjavu.formatLocalDate({ localDate, format: "March 3", timezone: tz, locale: "en" })
 // → "March 15"
 
+// "Today"/"Yesterday" instead of the date, falling back to "2024/12/31, 10:30 AM" otherwise.
+dayjavu.formatIsoDate({ isoDate: event.startsAt, format: "Today, 10:30 AM", timezone: tz, locale: "en" })
+// → "Today, 3:45 PM"
+
 // Arithmetic
 const nextWeek = dayjavu.addToLocalDate({ localDate, amount: 1, unit: "w", timezone: tz })
 const inThreeMonths = dayjavu.addToIsoDate({ isoDate: event.startsAt, amount: 3, unit: "month" })
